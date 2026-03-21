@@ -1,12 +1,19 @@
-from typing import Literal
 import uuid
 from enum import Enum
+from typing import Literal
 
 from fastapi import Cookie, FastAPI, Response
 from fastapi.responses import FileResponse
+from pydantic_core.core_schema import NoInfoWrapValidatorFunction
 
-from lib.utils import generate_token
-from models.models import ErrorResponse, LoginRequest, UserModel, UserRequest, UserResponse
+from lib.utils import generate_token, get_timestamp
+from models.models import (
+    ErrorResponse,
+    LoginRequest,
+    UserModel,
+    UserRequest,
+    UserResponse,
+)
 
 SECRET_KEY = "your_secret_key"
 
@@ -56,6 +63,37 @@ sample_products = [
 ]
 
 
+def get_user_by_token(session_token: str) -> UserModel | None:
+    for user in users:
+        if user.session_token == session_token:
+            return user
+    return None
+    
+def get_user_by_id(user_id: str) -> UserModel | None:
+    for user in users:
+        if user.id == user_id:
+            return user
+    return None
+
+
+def validate_token(session_token: str) -> Literal[True] | ErrorResponse:
+    user = get_user_by_token(session_token)
+    if user is None:
+        return ErrorResponse(message="Invalid session token")
+    user_id, timestamp, tokenData, tokenSalt  = user.session_token.split(".")
+
+    if user_id is None or timestamp is None or tokenData is None or tokenSalt is None:
+        return ErrorResponse(message="Invalid session token")
+
+    if get_timestamp() - int(timestamp) > 300:
+        return ErrorResponse(message="Session expired")
+
+    if '.'.join([tokenData,tokenSalt]) != generate_token({"user_id": user_id}, SECRET_KEY):
+        return ErrorResponse(message="Invalid session token")
+
+    return True
+
+
 @app.post("/create_user")
 def create_user(user: UserRequest) -> UserResponse:
     new_user = UserModel(**user.model_dump(), session_token="", id=str(uuid.uuid4()))
@@ -87,21 +125,56 @@ def login(response: Response, request: LoginRequest) -> str | ErrorResponse:
     for user in users:
         if user.name == request.username and user.password == request.password:
             user.session_token = (
-                user.id + "." + generate_token({"user_id": user.name}, SECRET_KEY)
+                user.id
+                + "."
+                + str(get_timestamp())
+                + "."
+                + generate_token({"user_id": user.id}, SECRET_KEY)
             )
             response.set_cookie(
-                key="session_token", value=user.session_token, httponly=True
+                key="session_token",
+                value=user.session_token,
+                httponly=True,
+                max_age=300,
             )
             return "Login successful"
     return ErrorResponse(message="Invalid username or password")
 
 
 # return code 401 and message "Unauthorized" if the user is not authenticated
-@app.get("/user")
-def get_user(response: Response, session_token: str = Cookie()) -> UserResponse |  ErrorResponse:
-    for user in users:
-        if user.session_token == session_token:
-            return UserResponse(**user.model_dump())
+@app.get("/profile")
+def get_user(
+    response: Response, session_token: str = Cookie()
+) -> UserResponse | ErrorResponse:
     
-    response.status_code = 401
-    return ErrorResponse(message="Unauthorized") 
+    result = validate_token(session_token)
+    if isinstance(result, ErrorResponse):
+        response.delete_cookie(key="session_token")
+        response.status_code = 401
+        return result
+    user = get_user_by_token(session_token)
+    if user is None:
+        response.delete_cookie(key="session_token")
+        response.status_code = 401
+        return ErrorResponse(message="Unauthorized")
+        
+    data = session_token.split(".")
+    timestamp = data[1]
+    delta_time = get_timestamp() - int(timestamp)
+    if 180 <= delta_time < 300:
+        user.session_token = (
+            user.id
+            + "."
+            + str(get_timestamp())
+            + "."
+            + generate_token({"user_id": user.id}, SECRET_KEY)
+        )
+        response.set_cookie(
+            key="session_token",
+            value=user.session_token,
+            httponly=True,
+            max_age=300,
+        )
+            
+    return UserResponse(**user.model_dump())
+    
