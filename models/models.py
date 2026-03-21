@@ -1,6 +1,12 @@
 from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class CommonHeaders(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    user_agent: str | None = Field(default=None, alias="User-Agent")
+    accept_language: str | None= Field(default=None, alias="Accept-Language")
 
 
 class ErrorResponse(BaseModel):

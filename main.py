@@ -1,13 +1,14 @@
 import uuid
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import Cookie, FastAPI, Response
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic_core.core_schema import NoInfoWrapValidatorFunction
 
 from lib.utils import generate_token, get_timestamp
 from models.models import (
+    CommonHeaders,
     ErrorResponse,
     LoginRequest,
     UserModel,
@@ -68,7 +69,8 @@ def get_user_by_token(session_token: str) -> UserModel | None:
         if user.session_token == session_token:
             return user
     return None
-    
+
+
 def get_user_by_id(user_id: str) -> UserModel | None:
     for user in users:
         if user.id == user_id:
@@ -80,7 +82,7 @@ def validate_token(session_token: str) -> Literal[True] | ErrorResponse:
     user = get_user_by_token(session_token)
     if user is None:
         return ErrorResponse(message="Invalid session token")
-    user_id, timestamp, tokenData, tokenSalt  = user.session_token.split(".")
+    user_id, timestamp, tokenData, tokenSalt = user.session_token.split(".")
 
     if user_id is None or timestamp is None or tokenData is None or tokenSalt is None:
         return ErrorResponse(message="Invalid session token")
@@ -88,7 +90,9 @@ def validate_token(session_token: str) -> Literal[True] | ErrorResponse:
     if get_timestamp() - int(timestamp) > 300:
         return ErrorResponse(message="Session expired")
 
-    if '.'.join([tokenData,tokenSalt]) != generate_token({"user_id": user_id}, SECRET_KEY):
+    if ".".join([tokenData, tokenSalt]) != generate_token(
+        {"user_id": user_id}, SECRET_KEY
+    ):
         return ErrorResponse(message="Invalid session token")
 
     return True
@@ -146,7 +150,7 @@ def login(response: Response, request: LoginRequest) -> str | ErrorResponse:
 def get_user(
     response: Response, session_token: str = Cookie()
 ) -> UserResponse | ErrorResponse:
-    
+
     result = validate_token(session_token)
     if isinstance(result, ErrorResponse):
         response.delete_cookie(key="session_token")
@@ -157,7 +161,7 @@ def get_user(
         response.delete_cookie(key="session_token")
         response.status_code = 401
         return ErrorResponse(message="Unauthorized")
-        
+
     data = session_token.split(".")
     timestamp = data[1]
     delta_time = get_timestamp() - int(timestamp)
@@ -175,6 +179,41 @@ def get_user(
             httponly=True,
             max_age=300,
         )
-            
+
     return UserResponse(**user.model_dump())
+
+
+def get_common_headers(
+    user_agent: Annotated[str | None, Header(alias="User-Agent")] = None,
+    accept_language: Annotated[str | None, Header(alias="Accept-Language")] = None,
+) -> CommonHeaders:
+    # Теперь, если заголовков нет, FastAPI передаст сюда None
+    return CommonHeaders(user_agent=user_agent, accept_language=accept_language)
+
+
+@app.get("/headers")
+def get_headers(response: Response, headers: Annotated[CommonHeaders, Depends(get_common_headers)]) -> dict:
+    user_agent = headers.user_agent
+    accept_language = headers.accept_language
+    if user_agent is None or accept_language is None:
+        raise HTTPException(status_code=400, detail="Missing required headers")
+        
+    return {
+        "User-Agent": user_agent,
+        "Accept-Language": accept_language,
+    }
     
+@app.get("/info")
+def get_info(response: Response, headers: Annotated[CommonHeaders, Depends(get_common_headers)]):
+    user_agent = headers.user_agent
+    accept_language = headers.accept_language
+    if user_agent is None or accept_language is None:
+        raise HTTPException(status_code=400, detail="Missing required headers")
+    
+    return {
+        "message": "Добро пожаловать! Ваши заголовки успешно обработаны!",
+        "headers": {
+            "User-Agent": user_agent,
+            "Accept-Language": accept_language,
+        },
+    }
