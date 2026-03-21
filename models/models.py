@@ -1,21 +1,19 @@
-from re import IGNORECASE, search
-from pydantic import BaseModel,Field, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, EmailStr, Field
 
 
-class User(BaseModel):
-    name: str
+class UserModel(BaseModel):
+    name: Annotated[str, Field(min_length=3)]
+    email: EmailStr
+    password: Annotated[str, Field(min_length=6)]
+    is_subscribed: bool
     age: int
-    id: int | None = None
-    
-class Feedback(BaseModel):
-    name: str = Field(min_length=2, max_length=50)
-    message: str = Field(min_length=10, max_length=500)
-    
-    @field_validator("message", mode="after")
-    @classmethod
-    def check_words(cls, value: str) -> str:
-        regex = r"\b(кринж\w*|рофл\w*|вайб\w*)\b"
-        if(search(regex, value, IGNORECASE)):
-            raise ValueError("Использование недопустимых слов")
-            
-        return value
+
+
+class UserModelWithToken(UserModel):
+    session_token: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
