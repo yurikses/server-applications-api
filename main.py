@@ -144,8 +144,6 @@ def login(response: Response, request: LoginRequest) -> str | ErrorResponse:
             return "Login successful"
     return ErrorResponse(message="Invalid username or password")
 
-
-# return code 401 and message "Unauthorized" if the user is not authenticated
 @app.get("/profile")
 def get_user(
     response: Response, session_token: str = Cookie()
@@ -187,7 +185,6 @@ def get_common_headers(
     user_agent: Annotated[str | None, Header(alias="User-Agent")] = None,
     accept_language: Annotated[str | None, Header(alias="Accept-Language")] = None,
 ) -> CommonHeaders:
-    # Теперь, если заголовков нет, FastAPI передаст сюда None
     return CommonHeaders(user_agent=user_agent, accept_language=accept_language)
 
 
