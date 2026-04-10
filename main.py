@@ -13,6 +13,8 @@ from models.models import User, UserInDB
 
 load_dotenv()
 mode = os.getenv("MODE", "DEV")
+if mode not in ("DEV", "PROD"):
+    mode = "DEV"
 
 app = FastAPI(
     docs_url=None,
