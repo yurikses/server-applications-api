@@ -38,3 +38,5 @@ Thumbs.db # Windows
 
 # Python specific files/folders that don't need to be committed
 pip-wheel-cache/
+
+.env

@@ -1,219 +1,145 @@
-import uuid
-from enum import Enum
-from typing import Annotated, Literal
+import logging
+import os
+import secrets
 
-from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
-from fastapi.responses import FileResponse
-from pydantic_core.core_schema import NoInfoWrapValidatorFunction
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from lib.utils import generate_token, get_timestamp
-from models.models import (
-    CommonHeaders,
-    ErrorResponse,
-    LoginRequest,
-    UserModel,
-    UserRequest,
-    UserResponse,
+from lib.utils import hash_password, verify_password
+from models.models import User, UserInDB
+
+load_dotenv()
+mode = os.getenv("MODE", "DEV")
+
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+security = HTTPBasic()
 
-SECRET_KEY = "your_secret_key"
 
-app = FastAPI()
-users: list[UserModel] = []
-sample_product_1 = {
-    "product_id": 123,
-    "name": "Smartphone",
-    "category": "Electronics",
-    "price": 599.99,
-}
+logger = logging.getLogger("uvicorn.error")
 
-sample_product_2 = {
-    "product_id": 456,
-    "name": "Phone Case",
-    "category": "Accessories",
-    "price": 19.99,
-}
-
-sample_product_3 = {
-    "product_id": 789,
-    "name": "Iphone",
-    "category": "Electronics",
-    "price": 1299.99,
-}
-
-sample_product_4 = {
-    "product_id": 101,
-    "name": "Headphones",
-    "category": "Accessories",
-    "price": 99.99,
-}
-
-sample_product_5 = {
-    "product_id": 202,
-    "name": "Smartwatch",
-    "category": "Electronics",
-    "price": 299.99,
-}
-
-sample_products = [
-    sample_product_1,
-    sample_product_2,
-    sample_product_3,
-    sample_product_4,
-    sample_product_5,
+FAKE_DB = [
+    {
+        "username": "admin",
+        "password": hash_password("admin"),
+    }
 ]
 
 
-def get_user_by_token(session_token: str) -> UserModel | None:
-    for user in users:
-        if user.session_token == session_token:
+def find_user(username: str) -> dict[str, str] | None:
+    for user in FAKE_DB:
+        if secrets.compare_digest(user.get("username", ""), username):
             return user
     return None
 
 
-def get_user_by_id(user_id: str) -> UserModel | None:
-    for user in users:
-        if user.id == user_id:
-            return user
-    return None
+# Функция для проверки пользователя в базе данных
+def verify_user(user: User):
+    logger.info(f"Попытка авторизации пользователя: {user.username}")
+    founded_user = find_user(user.username)
 
-
-def validate_token(session_token: str) -> Literal[True] | ErrorResponse:
-    user = get_user_by_token(session_token)
-    if user is None:
-        return ErrorResponse(message="Invalid session token")
-    user_id, timestamp, tokenData, tokenSalt = user.session_token.split(".")
-
-    if user_id is None or timestamp is None or tokenData is None or tokenSalt is None:
-        return ErrorResponse(message="Invalid session token")
-
-    if get_timestamp() - int(timestamp) > 300:
-        return ErrorResponse(message="Session expired")
-
-    if ".".join([tokenData, tokenSalt]) != generate_token(
-        {"user_id": user_id}, SECRET_KEY
+    if founded_user is None or not verify_password(
+        user.password, founded_user.get("password", "")
     ):
-        return ErrorResponse(message="Invalid session token")
-
-    return True
-
-
-@app.post("/create_user")
-def create_user(user: UserRequest) -> UserResponse:
-    new_user = UserModel(**user.model_dump(), session_token="", id=str(uuid.uuid4()))
-    users.append(new_user)
-    return UserResponse(**new_user.model_dump())
-
-
-@app.get("/product/{product_id}")
-def get_product(product_id: int) -> dict | None:
-    for product in sample_products:
-        if product["product_id"] == product_id:
-            return product
-    return None
-
-
-@app.get("/products/search")
-def search_product(keyword: str, category: str, limit: int) -> list[dict] | None:
-    results = []
-    for product in sample_products:
-        if keyword in product["name"] and category == product["category"]:
-            if results.__len__() < limit:
-                results.append(product)
-
-    return results if results.__len__() > 0 else None
-
-
-@app.post("/login")
-def login(response: Response, request: LoginRequest) -> str | ErrorResponse:
-    for user in users:
-        if user.name == request.username and user.password == request.password:
-            user.session_token = (
-                user.id
-                + "."
-                + str(get_timestamp())
-                + "."
-                + generate_token({"user_id": user.id}, SECRET_KEY)
-            )
-            response.set_cookie(
-                key="session_token",
-                value=user.session_token,
-                httponly=True,
-                max_age=300,
-            )
-            return "Login successful"
-    return ErrorResponse(message="Invalid username or password")
-
-
-# return code 401 and message "Unauthorized" if the user is not authenticated
-@app.get("/profile")
-def get_user(
-    response: Response, session_token: str = Cookie()
-) -> UserResponse | ErrorResponse:
-
-    result = validate_token(session_token)
-    if isinstance(result, ErrorResponse):
-        response.delete_cookie(key="session_token")
-        response.status_code = 401
-        return result
-    user = get_user_by_token(session_token)
-    if user is None:
-        response.delete_cookie(key="session_token")
-        response.status_code = 401
-        return ErrorResponse(message="Unauthorized")
-
-    data = session_token.split(".")
-    timestamp = data[1]
-    delta_time = get_timestamp() - int(timestamp)
-    if 180 <= delta_time < 300:
-        user.session_token = (
-            user.id
-            + "."
-            + str(get_timestamp())
-            + "."
-            + generate_token({"user_id": user.id}, SECRET_KEY)
-        )
-        response.set_cookie(
-            key="session_token",
-            value=user.session_token,
-            httponly=True,
-            max_age=300,
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Basic"},
         )
 
-    return UserResponse(**user.model_dump())
+    logger.info(f"Пользователь в базе данных: {founded_user.get('username', '')}")
+
+    return user
 
 
-def get_common_headers(
-    user_agent: Annotated[str | None, Header(alias="User-Agent")] = None,
-    accept_language: Annotated[str | None, Header(alias="Accept-Language")] = None,
-) -> CommonHeaders:
-    # Теперь, если заголовков нет, FastAPI передаст сюда None
-    return CommonHeaders(user_agent=user_agent, accept_language=accept_language)
+# Функция для аутентификации пользователя
+def auth_user(credentials: HTTPBasicCredentials = Depends(security)):
+    logger.info(f"Получены учетные данные: {credentials.username}")
+    if not credentials.username or not credentials.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Username and password are required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    user = User(username=credentials.username, password=credentials.password)
+    valid_user = verify_user(user)
+    return valid_user
 
 
-@app.get("/headers")
-def get_headers(response: Response, headers: Annotated[CommonHeaders, Depends(get_common_headers)]) -> dict:
-    user_agent = headers.user_agent
-    accept_language = headers.accept_language
-    if user_agent is None or accept_language is None:
-        raise HTTPException(status_code=400, detail="Missing required headers")
-        
-    return {
-        "User-Agent": user_agent,
-        "Accept-Language": accept_language,
-    }
-    
-@app.get("/info")
-def get_info(response: Response, headers: Annotated[CommonHeaders, Depends(get_common_headers)]):
-    user_agent = headers.user_agent
-    accept_language = headers.accept_language
-    if user_agent is None or accept_language is None:
-        raise HTTPException(status_code=400, detail="Missing required headers")
-    
-    return {
-        "message": "Добро пожаловать! Ваши заголовки успешно обработаны!",
-        "headers": {
-            "User-Agent": user_agent,
-            "Accept-Language": accept_language,
-        },
-    }
+@app.get("/login")
+def login(valid_user: User = Depends(auth_user)):
+
+    return {"message": f"Welcom, {valid_user.username}!"}
+
+
+@app.post("/register")
+def register(user: User):
+
+    logger.info(f"Получены учетные данные: {user.username}, {user.password}")
+
+    if user.username in FAKE_DB:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists",
+        )
+
+    logger.info(f"Регистрация нового пользователя: {user.username}, {user.password}")
+
+    hashed_password = hash_password(user.password)
+    user_in_db = UserInDB(username=user.username, hashed_password=hashed_password)
+
+    FAKE_DB.append(
+        {
+            "username": user_in_db.username,
+            "password": user_in_db.hashed_password,
+        }
+    )
+
+    print(FAKE_DB)
+    return {"message": "Successfully registered"}
+
+
+if mode == "DEV":
+
+    @app.get("/docs", include_in_schema=False)
+    def custom_swagger_ui_html(valid_user: User = Depends(auth_user)):
+        logger.info(
+            f"Проверка доступа к документации для пользователя: {valid_user.username}, {valid_user.password}"
+        )
+        logger.info(f"Ожидаемые учетные данные: {os.getenv('DOCS_USER', '')}, {os.getenv('DOCS_PASSWORD', '')}")
+        if not secrets.compare_digest(
+            valid_user.username, os.getenv("DOCS_USER", "")
+        ) or not secrets.compare_digest(
+            valid_user.password, os.getenv("DOCS_PASSWORD", "")
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json", title="API Documentation"
+        )
+
+    @app.get("/openapi.json", include_in_schema=False)
+    def get_openapi_endpoint(valid_user: User = Depends(auth_user)):
+
+        if not secrets.compare_digest(
+            valid_user.username, os.getenv("DOCS_USER", "")
+        ) or not secrets.compare_digest(
+            valid_user.password, os.getenv("DOCS_PASSWORD", "")
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+
+        return get_openapi(title="My API", version="1.0.0", routes=app.routes)

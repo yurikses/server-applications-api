@@ -1,21 +1,18 @@
-from itsdangerous import URLSafeSerializer
-
-def generate_token(data: dict, secret: str):
-    serializer = URLSafeSerializer(secret)
-    token = serializer.dumps(data)
-    return token    
-    
-def verify_token(token: str, secret: str) -> dict | None:
-    serializer = URLSafeSerializer(secret)
-    try:
-        data = serializer.loads(token)
-        return data
-    except Exception:
-        return None
-
+from passlib.context import CryptContext
 
 def get_timestamp() -> int:
     import time
     return int(time.time())
     
+appctx = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,  
+)
+
+def hash_password(password: str) -> str:
+    return appctx.hash(password)
     
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return appctx.verify(plain_password, hashed_password)
+
