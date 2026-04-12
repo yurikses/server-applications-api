@@ -24,11 +24,6 @@ from lib.jwt import create_jwt_token, decode_jwt_token
 from lib.utils import hash_password, verify_password
 from models.models import TodoCreate, TodoResponse, TodoUpdate, User, UserInDB
 
-FAKE_DB = [
-    {"username": "admin", "password": hash_password("admin"), "role": "admin"},
-    {"username": "user1", "password": hash_password("123"), "role": "user"},
-]
-
 
 ROLE_PERMISSIONS = {
     "admin": ["create", "read", "update", "delete"],
