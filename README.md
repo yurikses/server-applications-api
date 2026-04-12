@@ -6,7 +6,7 @@
 
 1. **Клонируйте репозиторий и перейдите в папку проекта:**
    ```bash
-   git clone <url_репозитория>
+   git clone https://github.com/yurikses/server-applications-api/tree/ThirdPractice
    cd fastAPI-practice
    ```
 
