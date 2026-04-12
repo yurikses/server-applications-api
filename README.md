@@ -7,7 +7,6 @@
 1. **Клонируйте репозиторий и перейдите в папку проекта:**
    ```bash
    git clone https://github.com/yurikses/server-applications-api/tree/ThirdPractice
-   cd fastAPI-practice
    ```
 
 2. **Установите необходимые зависимости:**
