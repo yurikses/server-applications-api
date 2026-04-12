@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -11,5 +11,22 @@ class User(UserBase):
     
 class UserInDB(UserBase):
     hashed_password: Annotated[str, Field(description="The user's hashed password")]
+    
+
+class TodoCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+
+class TodoUpdate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    completed: bool
+
+class TodoResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    completed: bool
     
 
