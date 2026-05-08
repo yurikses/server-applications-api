@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Float
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
-
+## Alchemy model for the products table
 class Product(Base):
     __tablename__ = "products"
 
@@ -12,3 +12,5 @@ class Product(Base):
     price = Column(Float, nullable=False)
     count = Column(Integer, nullable=False)
     description = Column(String, nullable=False, server_default="Описание отсутствует")
+
+
