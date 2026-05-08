@@ -99,8 +99,7 @@ def buy_product(product_id: int, amount: int):
         
     product["stock"] -= amount
     return {"message": "Покупка успешна", "remaining_stock": product["stock"]}
-
-# 1. Конечная точка, принимающая JSON нагрузку
+    
 @app.post("/profiles")
 def create_profile(profile: UserProfile):
 
