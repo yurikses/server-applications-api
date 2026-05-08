@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from models.response import ErrorResponse
+from models.user import UserProfile
 
 class ItemNotFoundException(Exception):
     def __init__(self, item_id: int):
@@ -47,6 +49,29 @@ async def insufficient_stock_handler(request: Request, exc: InsufficientStockExc
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def custom_validation_exception_handler(request: Request, exc: RequestValidationError):
+    formatted_errors = []
+    
+    for error in exc.errors():
+        
+        field_name = " -> ".join([str(loc) for loc in error["loc"][1:]]) 
+        error_msg = error["msg"]
+        formatted_errors.append({
+            "field": field_name,
+            "error": error_msg
+        })
+
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_code": "VALIDATION_FAILED",
+            "message": "Введенные данные не прошли проверку. Пожалуйста, исправьте ошибки.",
+            "details": formatted_errors
+        }
+    )
+
 @app.get("/products/{product_id}", responses={404: {"model": ErrorResponse}})
 def get_product(product_id: int):
     
@@ -72,9 +97,16 @@ def buy_product(product_id: int, amount: int):
             available=product["stock"]
         )
         
-    # Успешная покупка
     product["stock"] -= amount
     return {"message": "Покупка успешна", "remaining_stock": product["stock"]}
 
+# 1. Конечная точка, принимающая JSON нагрузку
+@app.post("/profiles")
+def create_profile(profile: UserProfile):
+
+    return {
+        "message": "Пользовательский профиль успешно создан!",
+        "profile": profile
+    }
 
 
